@@ -1,24 +1,30 @@
 cmake_minimum_required(VERSION 3.8)
 project(epos2_driver)
 
+# GNU/Clangで警告を有効化し、ビルド時に潜在的な問題を検出しやすくします。
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# ROS 2のビルドシステム、実行時依存、および独自msg型の生成に必要なパッケージです。
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+# msg定義からC++型サポートを生成し、パッケージ内外から利用可能にします。
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotorFeedback.msg"
   DEPENDENCIES std_msgs
 )
 
+# Maxonライブラリの展開先。キャッシュ変数なので、通常と異なる場所を使う場合は
+# CMakeの設定時に -DEPOS_COMMAND_ROOT=/path/to/library で上書きできます。
 set(EPOS_COMMAND_ROOT "$ENV{HOME}/opt/epos-command-library/EPOS_Linux_Library"
   CACHE PATH "Root directory of the extracted Maxon EPOS Linux Library")
 
+# Maxon配布ライブラリ内のCPUアーキテクチャ別ディレクトリを選択します。
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" EPOS_SYSTEM_PROCESSOR)
 if(EPOS_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
   set(EPOS_LIBRARY_ARCH "intel/x86_64")
@@ -37,6 +43,8 @@ else()
     "for your system.")
 endif()
 
+# ヘッダーとメイン共有ライブラリは個別指定も可能です。
+# 未指定の場合は、上で選んだアーキテクチャに対応する標準配置を使います。
 if(NOT EPOS_COMMAND_INCLUDE_DIR OR EPOS_COMMAND_INCLUDE_DIR MATCHES "-NOTFOUND$")
   set(EPOS_COMMAND_INCLUDE_DIR "${EPOS_COMMAND_ROOT}/include"
     CACHE PATH "Directory containing the Maxon Definitions.h header" FORCE)
@@ -51,6 +59,7 @@ set(EPOS_FTDI_LIBRARY
 set(EPOS_LIBRARY_DIRECTORY "${EPOS_COMMAND_ROOT}/lib/${EPOS_LIBRARY_ARCH}")
 find_library(EPOS_USB_LIBRARY NAMES usb-1.0)
 
+# 不足依存をconfigure時に検出し、コンパイルやリンク時の分かりにくいエラーを避けます。
 if(NOT EXISTS "${EPOS_COMMAND_INCLUDE_DIR}/Definitions.h")
   message(FATAL_ERROR
     "Maxon header not found: ${EPOS_COMMAND_INCLUDE_DIR}/Definitions.h. "
@@ -72,6 +81,8 @@ if(NOT EPOS_USB_LIBRARY)
     "(Ubuntu: libusb-1.0-0-dev).")
 endif()
 
+# Maxonライブラリはバージョン付きファイル名で配布されるため、
+# リンカーが参照する非バージョン名を同じディレクトリ内に用意します。
 function(create_epos_library_link link_name target_name)
   if(NOT EXISTS "${EPOS_LIBRARY_DIRECTORY}/${link_name}")
     execute_process(
@@ -90,14 +101,17 @@ endfunction()
 create_epos_library_link(libEposCmd.so libEposCmd.so.6.8.1.0)
 create_epos_library_link(libftd2xx.so libftd2xx.so.1.4.8)
 
+# ノードを構成するソースを1つの実行ファイルにまとめます。
 add_executable(epos_driver_node
   src/main.cpp
   src/epos_driver_node.cpp
   src/epos_connection.cpp
   src/epos_motor.cpp
 )
+# EPOS Command Libraryの公開ヘッダーは外部パスにあるため、対象にだけ追加します。
 target_compile_features(epos_driver_node PUBLIC cxx_std_17)
 target_include_directories(epos_driver_node PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
+# ROS 2依存と生成msgの型サポート、EPOS・FTDI・USBライブラリをリンクします。
 ament_target_dependencies(epos_driver_node rclcpp std_msgs std_srvs)
 rosidl_get_typesupport_target(epos_typesupport ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(epos_driver_node
@@ -107,14 +121,17 @@ target_link_libraries(epos_driver_node
   ${EPOS_USB_LIBRARY}
 )
 
+# ros2 run / ros2 launch がパッケージ実行ファイルとして見つけられる場所に配置します。
 install(TARGETS epos_driver_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# launchファイルとYAML設定をamentパッケージの共有ディレクトリへインストールします。
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
+# 統合テストではEPOS APIを偽実装に置き換え、実機なしでノードとのROS通信を検証します。
 if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_library(epos2_test_fake SHARED test/fake_epos.cpp)
@@ -129,5 +146,7 @@ if(BUILD_TESTING)
   set_tests_properties(epos_driver_integration PROPERTIES TIMEOUT 90)
 endif()
 
+# 他パッケージが生成msgを利用できるよう実行時依存をexportし、
+# amentインデックスへ本パッケージを登録します。
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
