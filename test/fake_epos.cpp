@@ -131,13 +131,15 @@ int VCS_GetVelocityIs(void *, unsigned short id, int * value, unsigned int * err
 {
   trace("get_velocity", id);
   if (fail_feedback(id, "velocity", error)) {return 0;}
-  *value = 200 * id;
+  const char * configured = std::getenv("EPOS_TEST_FEEDBACK_VELOCITY");
+  *value = configured ? static_cast<int>(std::strtol(configured, nullptr, 10)) : 200 * id;
   return 1;
 }
 int VCS_GetPositionIs(void *, unsigned short id, int * value, unsigned int * error)
 {
   trace("get_position", id);
   if (fail_feedback(id, "position", error)) {return 0;}
-  *value = -300 * id;
+  const char * configured = std::getenv("EPOS_TEST_FEEDBACK_POSITION");
+  *value = configured ? static_cast<int>(std::strtol(configured, nullptr, 10)) : -300 * id;
   return 1;
 }

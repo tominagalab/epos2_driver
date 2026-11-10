@@ -29,6 +29,10 @@ epos_driver_node:
     # node_id: EPOS2に設定したID（1〜127）。重複不可。
     # namespace: ROS 2のトピック・サービスの接頭辞。/で始め、重複させません。
     # mode: velocity（速度制御）または position（位置制御）。起動時に読み込みます。
+    # gear_ratio: モータ軸回転数 ÷ 出力軸回転数（26:1なら26.0）。正の小数で指定します。
+    # encoder_pulses_per_revolution: モータ軸1回転のエンコーダパルス数（4逓倍前の正の整数）。
+    # 500は仮値です。各実機のエンコーダ仕様を確認して修正してください。
+    # これはROS側の角度換算にのみ使用し、EPOS2本体の設定は変更しません。
     # velocity / position: 各モード用の値。選択しないモードの設定も必要です。
     # acceleration / deceleration: 加速度・減速度。想定単位は rpm/s。
     # max_velocity: 各モードの速度上限。想定単位は rpm。
@@ -43,6 +47,8 @@ epos_driver_node:
         node_id: 4
         namespace: /epos2/left_active_finger
         mode: velocity
+        gear_ratio: 26.0
+        encoder_pulses_per_revolution: 500
         velocity:
           acceleration: 10000
           deceleration: 10000
@@ -57,6 +63,8 @@ epos_driver_node:
         node_id: 5
         namespace: /epos2/right_active_finger
         mode: velocity
+        gear_ratio: 26.0
+        encoder_pulses_per_revolution: 500
         velocity:
           acceleration: 10000
           deceleration: 10000

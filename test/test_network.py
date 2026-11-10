@@ -1,3 +1,4 @@
+import math
 import os
 import signal
 import subprocess
@@ -177,6 +178,8 @@ class NetworkTest(unittest.TestCase):
         params = self.config['epos_driver_node']['ros__parameters']
         params['motor_names'] = ['node_4', 'node_5']
         params['feedback_rate_hz'] = 5.0
+        params['motors']['node_5']['gear_ratio'] = 12.5
+        params['motors']['node_5']['encoder_pulses_per_revolution'] = 1000
         received = {4: [], 5: []}
         subscriptions = []
         for node_id, namespace in (
@@ -195,6 +198,14 @@ class NetworkTest(unittest.TestCase):
                 self.assertEqual(message.current_ma, -100 * node_id)
                 self.assertEqual(message.velocity_actual, 200 * node_id)
                 self.assertEqual(message.position_counts, -300 * node_id)
+                ratio = 26.0 if node_id == 4 else 12.5
+                self.assertAlmostEqual(message.output_shaft_velocity, 200 * node_id / ratio)
+                self.assertAlmostEqual(
+                    message.output_shaft_position_motor_counts, -300 * node_id / ratio)
+                pulses = 500 if node_id == 4 else 1000
+                self.assertAlmostEqual(
+                    message.output_shaft_position_rad,
+                    (-300 * node_id) * 2 * math.pi / (4 * pulses * ratio))
                 self.assertGreater(message.header.stamp.sec, 0)
             stamps = [msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9 for msg in messages]
             self.assertGreater(stamps[3] - stamps[0], 0.4)
@@ -256,6 +267,78 @@ class NetworkTest(unittest.TestCase):
         self.assertEqual(self.process.wait(timeout=15), 1)
         self.assertIn('feedback_rate_hz must be', self.process_output())
         self.assertFalse(self.trace.exists())
+
+    def test_invalid_gear_ratio_rejected_before_device_open(self):
+        motors = self.config['epos_driver_node']['ros__parameters']['motors']
+        for ratio in (0.0, -26.0, float('nan'), float('inf')):
+            with self.subTest(ratio=ratio):
+                motors['node_4']['gear_ratio'] = ratio
+                self.start()
+                self.assertEqual(self.process.wait(timeout=15), 1)
+                self.assertIn('gear_ratio must be finite and positive', self.process_output())
+                self.assertFalse(self.trace.exists())
+                self.process = None
+
+    def test_missing_gear_ratio_rejected_before_device_open(self):
+        del self.config['epos_driver_node']['ros__parameters']['motors']['node_4']['gear_ratio']
+        self.start()
+        self.assertEqual(self.process.wait(timeout=15), 1)
+        self.assertIn('gear_ratio', self.process_output())
+        self.assertFalse(self.trace.exists())
+
+    def test_invalid_encoder_resolution_rejected_before_device_open(self):
+        motors = self.config['epos_driver_node']['ros__parameters']['motors']
+        for value in (0, -1, 2 ** 32, 500.0):
+            with self.subTest(value=value):
+                motors['node_4']['encoder_pulses_per_revolution'] = value
+                self.start()
+                self.assertEqual(self.process.wait(timeout=15), 1)
+                self.assertIn('encoder_pulses_per_revolution', self.process_output())
+                self.assertFalse(self.trace.exists())
+                self.process = None
+
+    def test_missing_encoder_resolution_rejected_before_device_open(self):
+        del self.config['epos_driver_node']['ros__parameters']['motors']['node_4'][
+            'encoder_pulses_per_revolution']
+        self.start()
+        self.assertEqual(self.process.wait(timeout=15), 1)
+        self.assertIn('encoder_pulses_per_revolution', self.process_output())
+        self.assertFalse(self.trace.exists())
+
+    def test_output_angle_one_negative_revolution(self):
+        params = self.config['epos_driver_node']['ros__parameters']
+        params['motor_names'] = ['node_4']
+        received = []
+        subscription = self.node.create_subscription(
+            MotorFeedback, '/epos2/left_active_finger/feedback', received.append, 10)
+        self.start(EPOS_TEST_FEEDBACK_POSITION='-52000')
+        deadline = time.monotonic() + 6
+        while not received and time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.assertTrue(received, self.process_output())
+        self.assertAlmostEqual(received[0].output_shaft_position_rad, -2 * math.pi)
+        self.node.destroy_subscription(subscription)
+
+    def test_overflowing_output_feedback_is_not_published(self):
+        params = self.config['epos_driver_node']['ros__parameters']
+        params['motor_names'] = ['node_4']
+        params['motors']['node_4']['gear_ratio'] = 1e-300
+        received = []
+        subscription = self.node.create_subscription(
+            MotorFeedback, '/epos2/left_active_finger/feedback', received.append, 10)
+        overflow_config = self.path / 'overflow.yaml'
+        overflow_config.write_text(
+            yaml.safe_dump(self.config).replace('1.0e-300', '0.' + '0' * 299 + '1'),
+            encoding='utf-8')
+        self.start(config_path=overflow_config, EPOS_TEST_FEEDBACK_VELOCITY='2147483647')
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+            if 'output shaft feedback exceeds floating-point range' in self.process_output():
+                break
+        self.assertIn('output shaft feedback exceeds floating-point range', self.process_output())
+        self.assertEqual(received, [])
+        self.node.destroy_subscription(subscription)
 
     def test_single_usb_motor_without_can(self):
         params = self.config['epos_driver_node']['ros__parameters']

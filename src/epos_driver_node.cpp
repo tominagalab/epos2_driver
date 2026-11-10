@@ -62,6 +62,11 @@ EposDriverNode::EposDriverNode()
       throw std::invalid_argument(prefix + "mode must be velocity or position");
     }
     config.position_mode = mode == "position";
+    config.gear_ratio = declare_parameter<double>(prefix + "gear_ratio");
+    if (!std::isfinite(config.gear_ratio) || config.gear_ratio <= 0.0) {
+      throw std::invalid_argument(prefix + "gear_ratio must be finite and positive");
+    }
+    config.encoder_pulses_per_revolution = positive(prefix + "encoder_pulses_per_revolution");
     config.velocity = read_profile(prefix + "velocity.", false);
     config.position = read_profile(prefix + "position.", true);
     if (config.position.profile_velocity > config.position.max_velocity) {
@@ -123,6 +128,22 @@ void EposDriverNode::publish_feedback()
   message.current_ma = values.current_ma;
   message.velocity_actual = values.velocity_actual;
   message.position_counts = values.position_counts;
+  message.output_shaft_velocity = static_cast<double>(values.velocity_actual) /
+    motors_[index]->config().gear_ratio;
+  message.output_shaft_position_motor_counts = static_cast<double>(values.position_counts) /
+    motors_[index]->config().gear_ratio;
+  constexpr double two_pi = 6.2831853071795864769;
+  message.output_shaft_position_rad = message.output_shaft_position_motor_counts /
+    (4.0 * motors_[index]->config().encoder_pulses_per_revolution) * two_pi;
+  if (!std::isfinite(message.output_shaft_velocity) ||
+    !std::isfinite(message.output_shaft_position_motor_counts) ||
+    !std::isfinite(message.output_shaft_position_rad))
+  {
+    RCLCPP_ERROR(get_logger(), "%s: output shaft feedback exceeds floating-point range",
+      motors_[index]->config().name_space.c_str());
+    feedback_retry_after_[index] = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    return;
+  }
   feedback_publishers_[index]->publish(message);
 }
 

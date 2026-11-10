@@ -21,6 +21,8 @@ struct MotorConfig
   unsigned short id;
   std::string name_space;
   bool position_mode;
+  double gear_ratio;
+  unsigned int encoder_pulses_per_revolution;
   Profile velocity;
   Profile position;
 };
