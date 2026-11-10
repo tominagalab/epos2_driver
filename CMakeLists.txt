@@ -84,23 +84,35 @@ endfunction()
 create_epos_library_link(libEposCmd.so libEposCmd.so.6.8.1.0)
 create_epos_library_link(libftd2xx.so libftd2xx.so.1.4.8)
 
-add_executable(epos2_driver_node src/epos2_driver_node.cpp)
-target_compile_features(epos2_driver_node PUBLIC cxx_std_17)
-target_include_directories(epos2_driver_node PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
-ament_target_dependencies(epos2_driver_node rclcpp std_msgs std_srvs)
-target_link_libraries(
-  epos2_driver_node
+add_executable(epos_driver_node src/epos_driver_node.cpp)
+target_compile_features(epos_driver_node PUBLIC cxx_std_17)
+target_include_directories(epos_driver_node PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
+ament_target_dependencies(epos_driver_node rclcpp std_msgs std_srvs)
+target_link_libraries(epos_driver_node
   ${EPOS_COMMAND_LIBRARY}
   ${EPOS_FTDI_LIBRARY}
   ${EPOS_USB_LIBRARY}
 )
 
-install(TARGETS epos2_driver_node
+install(TARGETS epos_driver_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch
+install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_library(epos2_test_fake SHARED test/fake_epos.cpp)
+  target_include_directories(epos2_test_fake PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
+  add_test(
+    NAME epos_driver_integration
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_network.py
+      $<TARGET_FILE:epos_driver_node> $<TARGET_FILE:epos2_test_fake>
+      ${CMAKE_CURRENT_SOURCE_DIR}/config/config.yaml ${EPOS_LIBRARY_DIRECTORY}
+  )
+  set_tests_properties(epos_driver_integration PROPERTIES TIMEOUT 90)
+endif()
 
 ament_package()

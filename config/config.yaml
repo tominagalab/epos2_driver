@@ -1,0 +1,78 @@
+epos_driver_node:
+  ros__parameters:
+    device_name: EPOS2
+    protocol_stack_name: MAXON SERIAL V2
+    interface_name: USB
+    port_name: USB0
+    usb_baudrate: 1000000
+    timeout_ms: 500
+    can_baudrate: 1000000
+    gateway_node_id: 4
+    # Only motors listed here are controlled. gateway_node_id may be omitted.
+    motor_names: [node_1, node_2, node_3, node_4, node_5]
+    motors:
+      node_1:
+        node_id: 1
+        namespace: /epos2/node_1
+        mode: velocity
+        velocity:
+          acceleration: 10000
+          deceleration: 10000
+          max_velocity: 8000
+        position:
+          acceleration: 10000
+          deceleration: 10000
+          profile_velocity: 6000
+          max_velocity: 8000
+      node_2:
+        node_id: 2
+        namespace: /epos2/node_2
+        mode: velocity
+        velocity:
+          acceleration: 10000
+          deceleration: 10000
+          max_velocity: 8000
+        position:
+          acceleration: 10000
+          deceleration: 10000
+          profile_velocity: 6000
+          max_velocity: 8000
+      node_3:
+        node_id: 3
+        namespace: /epos2/node_3
+        mode: velocity
+        velocity:
+          acceleration: 10000
+          deceleration: 10000
+          max_velocity: 8000
+        position:
+          acceleration: 10000
+          deceleration: 10000
+          profile_velocity: 6000
+          max_velocity: 8000
+      node_4:
+        node_id: 4
+        namespace: /epos2/node_4
+        mode: velocity
+        velocity:
+          acceleration: 10000
+          deceleration: 10000
+          max_velocity: 8000
+        position:
+          acceleration: 10000
+          deceleration: 10000
+          profile_velocity: 6000
+          max_velocity: 8000
+      node_5:
+        node_id: 5
+        namespace: /epos2/node_5
+        mode: velocity
+        velocity:
+          acceleration: 10000
+          deceleration: 10000
+          max_velocity: 8000
+        position:
+          acceleration: 10000
+          deceleration: 10000
+          profile_velocity: 6000
+          max_velocity: 8000

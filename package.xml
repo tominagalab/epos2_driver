@@ -2,7 +2,7 @@
 <package format="3">
   <name>epos2_driver</name>
   <version>0.1.0</version>
-  <description>ROS 2 driver for a Maxon EPOS2 controller over USB.</description>
+  <description>ROS 2 driver for Maxon EPOS2 controllers over USB and a USB-to-CAN gateway.</description>
   <maintainer email="maintainer@example.com">TODO: Maintainer</maintainer>
   <license>Apache-2.0</license>
 
@@ -14,6 +14,9 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>rclpy</test_depend>
+  <test_depend>python3-yaml</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

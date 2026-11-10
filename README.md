@@ -2,8 +2,9 @@
 
 ## 1. 概要
 
-Maxon EPOS2をUSBで操作するROS 2 Humble向けC++パッケージです。
-MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速度指令（Profile Velocity Mode）を行います。
+Maxon EPOS2をUSBおよびUSB-to-CANゲートウェイ経由で操作するROS 2 Humble向けC++パッケージです。
+1つのノードで、USB接続の1台からUSB-to-CAN経由の複数台まで操作できます。
+MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速度または位置の指令を行います。
 
 > **重要：安全に関する注意**
 >
@@ -16,66 +17,84 @@ MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速�
 
 | 項目 | 内容 |
 |---|---|
-| パッケージ名 | `epos2_driver` |
-| 実行ファイル | `epos2_driver_node` |
-| ノード名 | `epos2_driver` |
+| 実行ファイル・ROSノード名 | `epos_driver_node` |
 | 起動ファイル | [`launch/epos2_driver.launch.py`](./launch/epos2_driver.launch.py) |
-| 制御モード | Profile Velocity Mode |
+| 設定ファイル | [`config/config.yaml`](./config/config.yaml) |
+| 接続 | PC — USB — EPOS2ノード4 — CAN — ノード1、2、3、5 |
+| 制御モード | モータごとに `velocity` または `position` |
 
-### トピック・サービス一覧
+1つのROSノードが共有USB接続とCANサブデバイスを管理し、各モータに個別の名前空間を設けます。
+設定例では全モータが `velocity` です。名前空間は設定ファイルの各 `namespace` を編集して
+変更できます。以下の `<ns>` は各モータの設定値（例：`/epos2/node_1`）です。
 
-名前はすべて相対名です。ノードを名前空間付きで起動した場合は、その名前空間が先頭に付きます。
-このノードはパブリッシャ（状態の配信）を持ちません。
-
-#### Subscribe（購読）
-
-| トピック名 | 型 | QoS | 内容 |
+| 種別 | 名前 | 型 | 用途 |
 |---|---|---|---|
-| `cmd_vel_rpm` | `std_msgs/msg/Int32` | Reliable、Volatile、深さ10（既定） | 目標速度 [rpm]。符号で回転方向が決まります。 |
+| Subscribe | `<ns>/cmd_vel_rpm` | `std_msgs/msg/Int32` | 速度指令 [rpm]。`velocity` モードのみ |
+| Subscribe | `<ns>/cmd_position_counts` | `std_msgs/msg/Int32` | 絶対位置指令 [エンコーダカウント]。`position` モードのみ |
+| Service | `<ns>/enable` | `std_srvs/srv/SetBool` | `true` で有効化、`false` で停止・無効化 |
 
-- モータが無効のときに受信した指令は無視されます（5秒に1回、警告ログを出力）。
-- 指令は受信するたびにEPOS2へ送られます。タイムアウトや指令値の上下限による制限はありません。
-- 加減速は `profile_acceleration` / `profile_deceleration` に従います。
+購読のQoSはReliable、Volatile、深さ10です。`enable` は成功時に `success: true`、
+失敗時に `success: false` とエラー内容を返します。起動時に各モータを無効化し、
+有効なモータのみに指令を受け付けます。終了時は有効なモータの停止・無効化を試みます。
+このノードはモータ状態や指令結果を配信しません。指令処理のエラーはログに出ます。
 
-#### Service（サービス）
+位置指令はEPOS2の現在の基準座標に対する絶対位置で、新しい指令を直ちに適用します。
+この基準は永続的な絶対座標とは限りません。電源投入時に希望する位置がゼロになること、
+エンコーダの分解能・方向・基準の再現性を実機設定で確認してください。原点復帰や角度単位への
+変換は行いません。
 
-| サービス名 | 型 | 内容 |
-|---|---|---|
-| `enable` | `std_srvs/srv/SetBool` | `data: true` でモータを有効化、`data: false` で停止して無効化します。 |
+#### 設定項目
 
-`enable` のリクエストとレスポンス：
-
-| `data` | 動作 | `success` | `message` の例 |
-|---|---|---|---|
-| `true` | 有効化済みなら何もしません。未有効なら、フォルトのクリア、Profile Velocity Modeの有効化、加減速の設定、Enable stateへの遷移を順に行います。 | 成功時 `true`、いずれかの手順が失敗したら `false` | `EPOS2 enabled`、`EPOS2 is already enabled`、失敗時は `<API名> failed (error 0x........)` |
-| `false` | 無効化済みなら何もしません。有効なら速度指令を停止（Halt）してから無効化します。 | 成功時 `true`、停止または無効化に失敗したら `false` | `EPOS2 halted and disabled`、`EPOS2 is already disabled`、失敗時は `<API名> failed (error 0x........)` |
-
-#### パラメータ
-
-| パラメータ | 型 | 初期値 | 説明 |
-|---|---|---:|---|
-| `device_name` | string | `EPOS2` | EPOS Command Libraryに渡す機器名 |
-| `protocol_stack_name` | string | `MAXON SERIAL V2` | 通信プロトコルスタック名 |
-| `interface_name` | string | `USB` | 接続方式 |
-| `port_name` | string | `USB0` | ライブラリに渡すUSBポート名 |
-| `node_id` | int | `1` | EPOS2のノードID（1〜127） |
-| `baudrate` | int | `1000000` | 通信速度（正の値） |
-| `timeout_ms` | int | `500` | 通信タイムアウト [ms]（正の値） |
-| `profile_acceleration` | int | `1000` | 速度制御の加速度（正の値）。有効化時に設定されます。 |
-| `profile_deceleration` | int | `1000` | 速度制御の減速度（正の値）。有効化時に設定されます。 |
-
-- パラメータは起動時にのみ読み込まれ、実行中に変更しても反映されません。
-- 範囲外の値や接続失敗の場合、ノードはエラーを表示して終了します（終了コード1）。
-- 初期値が、使用するEPOS2やモータに適しているとは限りません。値の意味、単位、許容範囲はMaxonの機器マニュアルで確認してください。
-
-#### 状態遷移
-
-| タイミング | モータの状態 |
+| 項目 | 説明 |
 |---|---|
-| ノード起動時 | EPOS2へ接続し、Disable stateにします。 |
-| `enable(true)` 成功後 | 有効。`cmd_vel_rpm` が受け付けられます。 |
-| `enable(false)` 後 | 無効。`cmd_vel_rpm` は無視されます。 |
-| ノード終了時 | 有効だった場合は停止して無効化し、デバイスを閉じます。 |
+| `device_name`, `protocol_stack_name`, `interface_name`, `port_name` | USB接続のEPOS Command Library設定 |
+| `usb_baudrate`, `timeout_ms` | USBプロトコルの通信速度とタイムアウト [ms] |
+| `can_baudrate` | ゲートウェイのCAN通信速度の期待値 [bit/s]。例は `1000000` |
+| `gateway_node_id` | USBで直接接続されたEPOS2のノードID。例は `4` |
+| `motor_names` | 制御するモータ設定名のリスト（1台以上） |
+| `motors.<名前>.node_id` | EPOS2のノードID（1〜127、重複不可） |
+| `motors.<名前>.namespace` | モータの絶対名前空間（`/` で開始、重複不可） |
+| `motors.<名前>.mode` | `velocity` または `position` |
+| `motors.<名前>.velocity.acceleration`, `deceleration` | 速度制御時の加速度・減速度 |
+| `motors.<名前>.velocity.max_velocity` | 速度制御時の速度上限 |
+| `motors.<名前>.position.acceleration`, `deceleration` | 位置制御時の加速度・減速度 |
+| `motors.<名前>.position.profile_velocity` | 位置制御時のプロファイル速度 |
+| `motors.<名前>.position.max_velocity` | 位置制御時の速度上限 |
+
+設定例の加減速度は `10000`、速度上限は `8000`、位置プロファイル速度は `6000` です。
+想定単位は速度がrpm、加減速度がrpm/sですが、EPOS2の速度単位設定とモータの許容値を必ず
+確認してください。速度上限は選択されたモードの値をEPOS2に設定します。速度指令が上限を
+超えた場合は送信せず、ログにエラーを出します。位置プロファイル速度は位置速度上限以下に
+設定してください。パラメータは起動時に読み込み、実行中の変更は反映しません。
+
+制御台数は `motor_names` に列挙した設定の数で決まります。選ばれていない `motors` の
+設定は使用しません。たとえばUSB接続のノード4だけを制御する場合は、次のようにします。
+
+```yaml
+gateway_node_id: 4
+motor_names: [node_4]
+```
+
+USBで接続したEPOS2のIDが1の場合は、`gateway_node_id: 1` と `motor_names: [node_1]`
+に変更してください。USB接続のモータのみを選んだ場合、CANサブデバイスは開きません。
+CAN側だけを制御する場合は `motor_names: [node_1, node_2]` のように設定できますが、
+`gateway_node_id` は実際にUSB接続されたEPOS2のIDのままにします。ゲートウェイのモータを
+リストに含めない場合、そのモータには指令を出しません。
+
+設定例のCAN速度 `1 Mbit/s` はEPOS2の最大値です。全ノードのCAN速度と配線長、
+終端抵抗などが適切であることを事前に確認してください。起動時にゲートウェイの設定速度を
+読み取り、期待値と異なる場合はCAN側の操作を受け付けません（CAN側を選択した場合のみ）。
+CAN速度を自動変更することは
+ありません。USBゲートウェイの再接続やCAN速度の修正後はノードを再起動してください。
+
+CAN側の1台が応答しない場合、そのモータのエラーをログとサービス応答に出し、他のモータの
+操作を継続します。起動時の個別モータの初期化失敗は、そのモータのサービス呼び出し時に
+再試行します。ただしUSBゲートウェイやCANバス自体の障害は複数台に影響します。
+共有通信は順次処理され、通信タイムアウト中は他のモータの応答も遅れることがあります。
+
+**安全上の制限：** 指令の受信タイムアウト、位置のソフトリミット、非常停止機能はありません。
+通信途絶やプロセス異常終了時の停止も保証しません。上位システムおよび独立した安全回路で
+対策してください。速度上限も安全機能の代わりにはなりません。
 
 ## 2. 必要なもの
 
@@ -163,6 +182,16 @@ source ~/ros2_ws/install/setup.bash
 
 ### 4.1 ノードの起動
 
+[`config/config.yaml`](./config/config.yaml) の `motor_names`、接続設定、各モータの
+名前空間・モード・プロファイルを実機に合わせて設定し、ビルドし直してください。
+従来の単体USB用トピック `/enable` と `/cmd_vel_rpm` は使用せず、
+設定した各モータの名前空間を付けて操作します。
+統合後のノードは、単体USBの場合も設定された速度上限をEPOS2に設定し、
+上限を超える速度指令を拒否します。以前の設定ファイルを使用する場合は、
+ROSパラメータの先頭キーも `epos_driver_node` に変更してください。
+既存のインストール先には古い実行ファイルや起動ファイルが残る場合がありますが、
+この起動ファイルからは新しい `epos_driver_node` のみが起動します。
+
 実行時にもライブラリを見つけられるよう、`LD_LIBRARY_PATH` に追加して起動します。
 次はIntel/AMD 64-bit PC（`x86_64`）の例です。ARM 64-bit PC（`aarch64`）では
 `intel/x86_64` を `arm/v8` に置き換えてください。
@@ -178,7 +207,11 @@ ros2 launch epos2_driver epos2_driver.launch.py
 ```
 
 起動時、ノードはEPOS2に接続しますが、モータは無効のままです。
-パラメータを変更するには [`launch/epos2_driver.launch.py`](./launch/epos2_driver.launch.py) を編集します。
+別の設定ファイルを使用する場合は、絶対パスを指定できます。
+
+```bash
+ros2 launch epos2_driver epos2_driver.launch.py config:=/absolute/path/to/config.yaml
+```
 
 ### 4.2 モータを有効にする
 
@@ -189,16 +222,17 @@ ros2 launch epos2_driver epos2_driver.launch.py
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 
-ros2 service call /enable std_srvs/srv/SetBool "{data: true}"
+ros2 service call /epos2/node_1/enable std_srvs/srv/SetBool "{data: true}"
 ```
 
 ### 4.3 速度を指令する
 
-`/cmd_vel_rpm` に目標速度 [rpm] を送ります。使用するモータの安全な速度範囲を確認し、
+例としてノード1の `/epos2/node_1/cmd_vel_rpm` に目標速度 [rpm] を送ります。
+事前にサービス応答の `success: true` を確認してください。モータの安全な速度範囲を確認し、
 小さな値から試してください。
 
 ```bash
-ros2 topic pub --once /cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
+ros2 topic pub --once /epos2/node_1/cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
 ```
 
 継続して指令する場合は、`--once` の代わりに `-r 10`（10 Hz）などを指定します。
@@ -207,7 +241,18 @@ ros2 topic pub --once /cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
 ### 4.4 モータを停止・無効化する
 
 ```bash
-ros2 service call /enable std_srvs/srv/SetBool "{data: false}"
+ros2 service call /epos2/node_1/enable std_srvs/srv/SetBool "{data: false}"
+```
+
+### 4.5 位置を指令する
+
+例えばノード3の `mode` を `position` に変更した場合は、同じサービスで有効化し、
+位置をエンコーダカウント単位で指定します。実際の可動範囲と基準を確認してから送信してください。
+
+```bash
+ros2 service call /epos2/node_3/enable std_srvs/srv/SetBool "{data: true}"
+ros2 topic pub --once /epos2/node_3/cmd_position_counts std_msgs/msg/Int32 "{data: 100}"
+ros2 service call /epos2/node_3/enable std_srvs/srv/SetBool "{data: false}"
 ```
 
 ## 5. トラブルシューティング
@@ -229,6 +274,9 @@ ros2 service call /enable std_srvs/srv/SetBool "{data: false}"
 - **`enable` が `success: false` を返す**  
   `message` のエラーコード（`error 0x........`）を、Maxon EPOS Command Libraryのマニュアルで
   確認します。電源、モータの配線、EPOS2のエラー状態を確認してください。
+- **`CAN baudrate mismatch`**
+  全EPOS2とノード4のゲートウェイのCAN速度を確認し、`can_baudrate` と一致させてから
+  ノードを再起動します。速度は本ノードから変更されません。
 
 詳しい関数や通信設定については、[Maxon EPOS Command Libraryのマニュアル（英語）](https://www.maxongroup.ch/medias/sys_master/root/9157360353310/EPOS-Command-Library-En.pdf)
 も参照してください。
