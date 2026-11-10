@@ -182,7 +182,7 @@ source ~/ros2_ws/install/setup.bash
 
 ### 4.1 ノードの起動
 
-[`config/config.yaml`](./config/config.yaml) の `motor_names`、接続設定、各モータの
+使用する設定ファイルの `motor_names`、接続設定、各モータの
 名前空間・モード・プロファイルを実機に合わせて設定し、ビルドし直してください。
 従来の単体USB用トピック `/enable` と `/cmd_vel_rpm` は使用せず、
 設定した各モータの名前空間を付けて操作します。
@@ -207,11 +207,27 @@ ros2 launch epos2_driver epos2_driver.launch.py
 ```
 
 起動時、ノードはEPOS2に接続しますが、モータは無効のままです。
-別の設定ファイルを使用する場合は、絶対パスを指定できます。
+現在はノード4（USB）とノード5（CAN）用の
+[`config/config_node4_node5.yaml`](./config/config_node4_node5.yaml) を読み込みます。
+このファイルは5台用設定と同じ速度上限・加減速度を使用します。
+
+設定を切り替えるには、[`launch/epos2_driver.launch.py`](./launch/epos2_driver.launch.py)
+の `DEFAULT_CONFIG_FILE` を編集し、ビルドし直してください。例えば5台用にする場合は
+次のように変更します。
+
+```python
+DEFAULT_CONFIG_FILE = 'config.yaml'
+```
+
+切り替え後も同じ `ros2 launch epos2_driver epos2_driver.launch.py` で起動できます。
+一時的に別の設定ファイルを使用する場合は、従来どおり絶対パスを指定することもできます。
 
 ```bash
 ros2 launch epos2_driver epos2_driver.launch.py config:=/absolute/path/to/config.yaml
 ```
+
+ノード4・5の構成では、それぞれ `/epos2/node_4`・`/epos2/node_5` の名前空間を使用します。
+以下の操作例はノード1の場合なので、使用するモータの名前空間に読み替えてください。
 
 ### 4.2 モータを有効にする
 

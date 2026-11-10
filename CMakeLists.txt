@@ -111,6 +111,7 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_network.py
       $<TARGET_FILE:epos_driver_node> $<TARGET_FILE:epos2_test_fake>
       ${CMAKE_CURRENT_SOURCE_DIR}/config/config.yaml ${EPOS_LIBRARY_DIRECTORY}
+      ${CMAKE_CURRENT_SOURCE_DIR}/config/config_node4_node5.yaml
   )
   set_tests_properties(epos_driver_integration PROPERTIES TIMEOUT 90)
 endif()

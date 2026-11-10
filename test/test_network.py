@@ -13,7 +13,7 @@ from std_srvs.srv import SetBool
 import yaml
 
 
-EXECUTABLE, FAKE, CONFIG, LIBRARY_DIR = sys.argv[1:5]
+EXECUTABLE, FAKE, CONFIG, LIBRARY_DIR, TWO_MOTOR_CONFIG = sys.argv[1:6]
 sys.argv = sys.argv[:1]
 os.environ['ROS_DOMAIN_ID'] = str(100 + os.getpid() % 100)
 os.environ['ROS_LOCALHOST_ONLY'] = '1'
@@ -52,7 +52,7 @@ class NetworkTest(unittest.TestCase):
         self.output.close()
         self.tmp.cleanup()
 
-    def start(self, **variables):
+    def start(self, config_path=None, **variables):
         self.config_path.write_text(yaml.safe_dump(self.config), encoding='utf-8')
         env = os.environ.copy()
         env.update(variables)
@@ -60,7 +60,7 @@ class NetworkTest(unittest.TestCase):
         env['LD_PRELOAD'] = FAKE
         env['LD_LIBRARY_PATH'] = LIBRARY_DIR + ':' + env.get('LD_LIBRARY_PATH', '')
         self.process = subprocess.Popen(
-            [EXECUTABLE, '--ros-args', '--params-file', str(self.config_path)],
+            [EXECUTABLE, '--ros-args', '--params-file', str(config_path or self.config_path)],
             env=env, stdout=self.output, stderr=subprocess.STDOUT,
         )
 
@@ -178,6 +178,31 @@ class NetworkTest(unittest.TestCase):
         self.assertNotIn('disable 1', trace)
         self.assertNotIn('disable 4', trace)
         self.assertNotIn('disable 5', trace)
+
+    def test_node4_node5_configuration(self):
+        with open(CONFIG, encoding='utf-8') as config:
+            full = yaml.safe_load(config)['epos_driver_node']['ros__parameters']
+        with open(TWO_MOTOR_CONFIG, encoding='utf-8') as config:
+            two = yaml.safe_load(config)['epos_driver_node']['ros__parameters']
+        self.assertEqual(two['motor_names'], ['node_4', 'node_5'])
+        self.assertEqual(two['gateway_node_id'], 4)
+        for name in two['motor_names']:
+            self.assertEqual(two['motors'][name], full['motors'][name])
+            self.assertEqual(two['motors'][name]['mode'], 'velocity')
+
+        self.start(config_path=TWO_MOTOR_CONFIG)
+        for node_id in (4, 5):
+            namespace = f'/epos2/node_{node_id}'
+            self.assertTrue(self.call(namespace, True).success)
+            self.publish(namespace + '/cmd_vel_rpm', 100)
+            self.wait_trace(f'move_velocity {node_id} 100 0')
+        trace = self.trace.read_text(encoding='utf-8')
+        self.assertIn('open_subdevice', trace)
+        for node_id in (1, 2, 3):
+            self.assertNotIn(f'disable {node_id} ', trace)
+        for node_id in (4, 5):
+            self.assertIn(f'velocity_profile {node_id} 10000 10000', trace)
+            self.assertIn(f'max_velocity {node_id} 8000', trace)
 
 
 if __name__ == '__main__':
