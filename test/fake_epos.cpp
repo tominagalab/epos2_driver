@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace
 {
@@ -102,3 +103,41 @@ int VCS_HaltVelocityMovement(void *, unsigned short id, unsigned int *)
 {trace("halt_velocity", id); return 1;}
 int VCS_HaltPositionMovement(void *, unsigned short id, unsigned int *)
 {trace("halt_position", id); return 1;}
+
+namespace
+{
+bool fail_feedback(unsigned short id, const char * operation, unsigned int * error)
+{
+  const char * failed_node = std::getenv("EPOS_TEST_FEEDBACK_FAIL_NODE");
+  const char * failed_operation = std::getenv("EPOS_TEST_FEEDBACK_FAIL_OPERATION");
+  if (failed_node && failed_operation && std::strtoul(failed_node, nullptr, 10) == id &&
+    std::string(failed_operation) == operation)
+  {
+    *error = 0x9876;
+    return true;
+  }
+  return false;
+}
+}
+
+int VCS_GetCurrentIsEx(void *, unsigned short id, int * value, unsigned int * error)
+{
+  trace("get_current", id);
+  if (fail_feedback(id, "current", error)) {return 0;}
+  *value = -100 * id;
+  return 1;
+}
+int VCS_GetVelocityIs(void *, unsigned short id, int * value, unsigned int * error)
+{
+  trace("get_velocity", id);
+  if (fail_feedback(id, "velocity", error)) {return 0;}
+  *value = 200 * id;
+  return 1;
+}
+int VCS_GetPositionIs(void *, unsigned short id, int * value, unsigned int * error)
+{
+  trace("get_position", id);
+  if (fail_feedback(id, "position", error)) {return 0;}
+  *value = -300 * id;
+  return 1;
+}

@@ -4,7 +4,8 @@
 
 Maxon EPOS2をUSBおよびUSB-to-CANゲートウェイ経由で操作するROS 2 Humble向けC++パッケージです。
 1つのノードで、USB接続の1台からUSB-to-CAN経由の複数台まで操作できます。
-MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速度または位置の指令を行います。
+MaxonのEPOS Command Libraryを使い、モータの有効化・無効化、速度または位置の指令、
+電流・速度・位置のフィードバック配信を行います。
 
 > **重要：安全に関する注意**
 >
@@ -51,12 +52,35 @@ ROS 2ノードの数は増えません。
 |---|---|---|---|
 | Subscribe | `<ns>/cmd_vel_rpm` | `std_msgs/msg/Int32` | 速度指令 [rpm]。`velocity` モードのみ |
 | Subscribe | `<ns>/cmd_position_counts` | `std_msgs/msg/Int32` | 絶対位置指令 [エンコーダカウント]。`position` モードのみ |
+| Publish | `<ns>/feedback` | `epos2_driver/msg/MotorFeedback` | 電流・速度・位置の実測値 |
 | Service | `<ns>/enable` | `std_srvs/srv/SetBool` | `true` で有効化、`false` で停止・無効化 |
 
-購読のQoSはReliable、Volatile、深さ10です。`enable` は成功時に `success: true`、
+購読とフィードバック配信のQoSはReliable、Volatile、深さ10です。`enable` は成功時に `success: true`、
 失敗時に `success: false` とエラー内容を返します。起動時に各モータを無効化し、
 有効なモータのみに指令を受け付けます。終了時は有効なモータの停止・無効化を試みます。
-このノードはモータ状態や指令結果を配信しません。指令処理のエラーはログに出ます。
+モータの有効状態や指令結果は配信しません。指令処理のエラーはログに出ます。
+
+#### フィードバックメッセージ
+
+[`msg/MotorFeedback.msg`](./msg/MotorFeedback.msg) の各フィールドは次のとおりです。
+
+| フィールド | 型 | 内容 |
+|---|---|---|
+| `header.stamp` | `builtin_interfaces/msg/Time` | 3値の取得完了時刻（ROS時刻） |
+| `header.frame_id` | `string` | 空文字列（座標系は設定しません） |
+| `current_ma` | `int32` | 電流実測値 [mA] |
+| `velocity_actual` | `int32` | 速度実測値。単位はEPOS2の速度単位設定に従い、rpmとは限りません |
+| `position_counts` | `int32` | 位置実測値 [quadcounts。通常エンコーダ1周期あたり4カウント] |
+
+値は `VCS_GetCurrentIsEx`、`VCS_GetVelocityIs`、`VCS_GetPositionIs` で順番に取得します。
+同時刻の測定値ではなく、角度や車輪速度への変換も行いません。モータの有効・無効にかかわらず
+取得を試み、3値すべての取得が成功した場合のみ発行します。1つでも失敗した場合はログに
+エラーを出し、その回は発行せず、失敗したモータは1秒後以降に再試行します。上位システムでは
+受信途絶や `header.stamp` を監視し、古い値を現在値として扱わないでください。
+
+共有通信は単一スレッドで順次処理します。取得は1台ずつ交互に実行しますが、
+通信時間やタイムアウト中は他のモータの指令・サービスも遅れることがあります。
+指定周波数は保証値ではなく、実機で負荷と指令遅延を確認してください。
 
 位置指令はEPOS2の現在の基準座標に対する絶対位置で、新しい指令を直ちに適用します。
 この基準は永続的な絶対座標とは限りません。電源投入時に希望する位置がゼロになること、
@@ -69,6 +93,7 @@ ROS 2ノードの数は増えません。
 |---|---|
 | `device_name`, `protocol_stack_name`, `interface_name`, `port_name` | USB接続のEPOS Command Library設定 |
 | `usb_baudrate`, `timeout_ms` | USBプロトコルの通信速度とタイムアウト [ms] |
+| `feedback_rate_hz` | 各モータのフィードバック発行目標 [Hz]。浮動小数点数 `0.1`〜`100.0`、既定値 `10.0` |
 | `can_baudrate` | ゲートウェイのCAN通信速度の期待値 [bit/s]。例は `1000000` |
 | `gateway_node_id` | USBで直接接続されたEPOS2のノードID。例は `4` |
 | `motor_names` | 制御するモータ設定名のリスト（1台以上） |
@@ -290,6 +315,24 @@ ros2 service call /epos2/left_active_finger/enable std_srvs/srv/SetBool "{data: 
 ros2 service call /epos2/rear_wheel/enable std_srvs/srv/SetBool "{data: true}"
 ros2 topic pub --once /epos2/rear_wheel/cmd_position_counts std_msgs/msg/Int32 "{data: 100}"
 ros2 service call /epos2/rear_wheel/enable std_srvs/srv/SetBool "{data: false}"
+```
+
+### 4.6 フィードバックを確認する
+
+別端末でROS 2とワークスペースの環境を読み込んでから、例えば左側アクティブフィンガーの
+フィードバックを確認します。モータが無効でも、通信可能であれば発行されます。
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 topic echo /epos2/left_active_finger/feedback
+```
+
+型と発行周期は次のコマンドで確認できます。周期は通信状況によって変動します。
+
+```bash
+ros2 interface show epos2_driver/msg/MotorFeedback
+ros2 topic hz /epos2/left_active_finger/feedback
 ```
 
 ## 5. トラブルシューティング

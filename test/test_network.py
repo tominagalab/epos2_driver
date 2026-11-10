@@ -10,6 +10,7 @@ from pathlib import Path
 import rclpy
 from std_msgs.msg import Int32
 from std_srvs.srv import SetBool
+from epos2_driver.msg import MotorFeedback
 import yaml
 
 
@@ -132,6 +133,18 @@ class NetworkTest(unittest.TestCase):
         self.publish('/epos2/left_active_finger/cmd_vel_rpm', 200)
         self.wait_trace('move_velocity 4 200 0')
 
+    def test_feedback_errors_report_each_failed_motor(self):
+        self.start(EPOS_TEST_CAN_BAUD='500000')
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            output = self.process_output()
+            if ('/epos2/left_wheel: feedback:' in output and
+                    '/epos2/right_wheel: feedback:' in output):
+                break
+            time.sleep(0.05)
+        self.assertIn('/epos2/left_wheel: feedback:', self.process_output())
+        self.assertIn('/epos2/right_wheel: feedback:', self.process_output())
+
     def test_failed_enable_and_disable_blocks_further_commands(self):
         self.start(EPOS_TEST_FAIL_ENABLE_NODE='1', EPOS_TEST_FAIL_DISABLE_AFTER_ENABLE='1')
         result = self.call('/epos2/left_wheel', True)
@@ -158,6 +171,90 @@ class NetworkTest(unittest.TestCase):
         self.start()
         self.assertEqual(self.process.wait(timeout=15), 1)
         self.assertIn('invalid', self.process_output().lower())
+        self.assertFalse(self.trace.exists())
+
+    def test_feedback_values_and_rate_when_disabled(self):
+        params = self.config['epos_driver_node']['ros__parameters']
+        params['motor_names'] = ['node_4', 'node_5']
+        params['feedback_rate_hz'] = 5.0
+        received = {4: [], 5: []}
+        subscriptions = []
+        for node_id, namespace in (
+            (4, '/epos2/left_active_finger'), (5, '/epos2/right_active_finger')
+        ):
+            subscriptions.append(self.node.create_subscription(
+                MotorFeedback, namespace + '/feedback',
+                lambda message, motor_id=node_id: received[motor_id].append(message), 10))
+        self.start()
+        deadline = time.monotonic() + 8
+        while min(len(messages) for messages in received.values()) < 4 and time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        for node_id, messages in received.items():
+            self.assertGreaterEqual(len(messages), 4, self.process_output())
+            for message in messages:
+                self.assertEqual(message.current_ma, -100 * node_id)
+                self.assertEqual(message.velocity_actual, 200 * node_id)
+                self.assertEqual(message.position_counts, -300 * node_id)
+                self.assertGreater(message.header.stamp.sec, 0)
+            stamps = [msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9 for msg in messages]
+            self.assertGreater(stamps[3] - stamps[0], 0.4)
+            self.assertLess(stamps[3] - stamps[0], 1.5)
+
+    def test_default_feedback_rate_with_five_motors(self):
+        params = self.config['epos_driver_node']['ros__parameters']
+        params.pop('feedback_rate_hz', None)
+        received = {node_id: [] for node_id in range(1, 6)}
+        namespaces = {
+            1: '/epos2/left_wheel',
+            2: '/epos2/right_wheel',
+            3: '/robot/arm',
+            4: '/epos2/left_active_finger',
+            5: '/epos2/right_active_finger',
+        }
+        subscriptions = []
+        for node_id, namespace in namespaces.items():
+            subscriptions.append(self.node.create_subscription(
+                MotorFeedback, namespace + '/feedback',
+                lambda message, motor_id=node_id: received[motor_id].append(message), 10))
+        self.start()
+        deadline = time.monotonic() + 8
+        while min(len(messages) for messages in received.values()) < 4 and time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        for messages in received.values():
+            self.assertGreaterEqual(len(messages), 4, self.process_output())
+            stamps = [msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9 for msg in messages]
+            self.assertGreater(stamps[3] - stamps[0], 0.20)
+            self.assertLess(stamps[3] - stamps[0], 0.75)
+
+    def test_feedback_failure_isolated_and_not_published(self):
+        params = self.config['epos_driver_node']['ros__parameters']
+        params['motor_names'] = ['node_4', 'node_5']
+        received = {4: [], 5: []}
+        subscriptions = []
+        for node_id, namespace in (
+            (4, '/epos2/left_active_finger'), (5, '/epos2/right_active_finger')
+        ):
+            subscriptions.append(self.node.create_subscription(
+                MotorFeedback, namespace + '/feedback',
+                lambda message, motor_id=node_id: received[motor_id].append(message), 10))
+        self.start(EPOS_TEST_FEEDBACK_FAIL_NODE='5', EPOS_TEST_FEEDBACK_FAIL_OPERATION='velocity')
+        deadline = time.monotonic() + 4
+        while len(received[4]) < 4 and time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.assertGreaterEqual(len(received[4]), 4, self.process_output())
+        self.assertEqual(received[5], [])
+        self.assertIn('VCS_GetVelocityIs failed (error 0x00009876)', self.process_output())
+        trace = self.trace.read_text(encoding='utf-8')
+        self.assertIn('get_current 5', trace)
+        self.assertNotIn('get_position 5', trace)
+        self.assertTrue(self.call('/epos2/left_active_finger', True).success)
+        self.assertTrue(self.call('/epos2/right_active_finger', True).success)
+
+    def test_invalid_feedback_rate_rejected_before_device_open(self):
+        self.config['epos_driver_node']['ros__parameters']['feedback_rate_hz'] = 0.0
+        self.start()
+        self.assertEqual(self.process.wait(timeout=15), 1)
+        self.assertIn('feedback_rate_hz must be', self.process_output())
         self.assertFalse(self.trace.exists())
 
     def test_single_usb_motor_without_can(self):

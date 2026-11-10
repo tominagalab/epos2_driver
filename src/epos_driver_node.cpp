@@ -1,6 +1,8 @@
 #include "epos_driver_node.hpp"
 
 #include <cstdint>
+#include <chrono>
+#include <cmath>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -20,6 +22,10 @@ EposDriverNode::EposDriverNode()
   connection_config.baudrate = positive("usb_baudrate");
   connection_config.timeout = positive("timeout_ms");
   connection_config.can_baudrate = positive("can_baudrate");
+  const auto feedback_rate = declare_parameter<double>("feedback_rate_hz", 10.0);
+  if (!std::isfinite(feedback_rate) || feedback_rate < 0.1 || feedback_rate > 100.0) {
+    throw std::invalid_argument("feedback_rate_hz must be between 0.1 and 100.0");
+  }
   const auto gateway_id = declare_parameter<int64_t>("gateway_node_id", 4);
   if (gateway_id < 1 || gateway_id > 127) {
     throw std::invalid_argument("gateway_node_id must be between 1 and 127");
@@ -66,6 +72,8 @@ EposDriverNode::EposDriverNode()
       get_name(), get_namespace());
     rclcpp::expand_topic_or_service_name(
       config.name_space + "/enable", get_name(), get_namespace(), true);
+    rclcpp::expand_topic_or_service_name(
+      config.name_space + "/feedback", get_name(), get_namespace());
     configs.push_back(std::move(config));
   }
   connection_config.use_can = ids.size() > ids.count(connection_config.gateway_id);
@@ -85,11 +93,37 @@ EposDriverNode::EposDriverNode()
         std_srvs::srv::SetBool::Response::SharedPtr response) {
         ptr->set_enabled(request->data, *response);
       }));
+    feedback_publishers_.push_back(
+      create_publisher<epos2_driver::msg::MotorFeedback>(settings.name_space + "/feedback", 10));
+    feedback_retry_after_.emplace_back();
     motors_.push_back(std::move(motor));
   }
   for (const auto & motor : motors_) {
     motor->initialize();
   }
+  const auto interval = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::duration<double>(1.0 / (feedback_rate * motors_.size())));
+  feedback_timer_ = create_wall_timer(interval, [this]() {publish_feedback();});
+}
+
+void EposDriverNode::publish_feedback()
+{
+  const auto index = next_feedback_;
+  next_feedback_ = (next_feedback_ + 1) % motors_.size();
+  if (std::chrono::steady_clock::now() < feedback_retry_after_[index]) {
+    return;
+  }
+  MotorFeedback values;
+  if (!motors_[index]->read_feedback(values)) {
+    feedback_retry_after_[index] = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    return;
+  }
+  epos2_driver::msg::MotorFeedback message;
+  message.header.stamp = now();
+  message.current_ma = values.current_ma;
+  message.velocity_actual = values.velocity_actual;
+  message.position_counts = values.position_counts;
+  feedback_publishers_[index]->publish(message);
 }
 
 unsigned int EposDriverNode::positive(const std::string & name)

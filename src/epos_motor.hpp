@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -24,6 +25,13 @@ struct MotorConfig
   Profile position;
 };
 
+struct MotorFeedback
+{
+  int32_t current_ma;
+  int32_t velocity_actual;
+  int32_t position_counts;
+};
+
 class EposMotor
 {
 public:
@@ -35,10 +43,12 @@ public:
 
   bool initialize();
   void command(int32_t value);
+  bool read_feedback(MotorFeedback & feedback);
   void set_enabled(bool enable, std_srvs::srv::SetBool::Response & response);
   const MotorConfig & config() const {return config_;}
 
 private:
+  void log_feedback_error(const std::string & message);
   MotorConfig config_;
   EposConnection & connection_;
   rclcpp::Logger logger_;
@@ -47,4 +57,5 @@ private:
   bool enabled_{false};
   bool uncertain_{false};
   std::string error_;
+  std::chrono::steady_clock::time_point next_feedback_error_log_{};
 };

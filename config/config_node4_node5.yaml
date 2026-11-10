@@ -17,6 +17,7 @@ epos_driver_node:
     port_name: USB0             # USBポート名。実際の接続先に合わせます。
     usb_baudrate: 1000000       # USB通信の設定速度 [bit/s]
     timeout_ms: 500             # 通信の待ち時間 [ms]
+    feedback_rate_hz: 10.0      # 各モータのフィードバック発行目標 [Hz]（0.1〜100.0）
     can_baudrate: 1000000       # ゲートウェイのCAN速度の期待値 [bit/s]
     gateway_node_id: 4          # PCにUSB接続されたEPOS2のノードID
     # CAN速度は読み取って照合するだけで、自動変更しません。実機側の設定を確認してください。

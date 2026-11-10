@@ -44,6 +44,42 @@ bool EposMotor::initialize()
   return false;
 }
 
+void EposMotor::log_feedback_error(const std::string & message)
+{
+  const auto now = std::chrono::steady_clock::now();
+  if (now >= next_feedback_error_log_) {
+    RCLCPP_ERROR(logger_, "%s: feedback: %s", config_.name_space.c_str(), message.c_str());
+    next_feedback_error_log_ = now + std::chrono::seconds(5);
+  }
+}
+
+bool EposMotor::read_feedback(MotorFeedback & feedback)
+{
+  auto * port = connection_.handle(config_.id);
+  if (!port) {
+    log_feedback_error(connection_.error());
+    return false;
+  }
+  unsigned int error = 0;
+  int current = 0;
+  int velocity = 0;
+  int position = 0;
+  const char * failed = nullptr;
+  if (!VCS_GetCurrentIsEx(port, config_.id, &current, &error)) {
+    failed = "VCS_GetCurrentIsEx";
+  } else if (!VCS_GetVelocityIs(port, config_.id, &velocity, &error)) {
+    failed = "VCS_GetVelocityIs";
+  } else if (!VCS_GetPositionIs(port, config_.id, &position, &error)) {
+    failed = "VCS_GetPositionIs";
+  }
+  if (failed) {
+    log_feedback_error(api_error(failed, error));
+    return false;
+  }
+  feedback = {current, velocity, position};
+  return true;
+}
+
 void EposMotor::command(int32_t value)
 {
   if (!ready_ || !enabled_ || uncertain_) {

@@ -9,6 +9,12 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/MotorFeedback.msg"
+  DEPENDENCIES std_msgs
+)
 
 set(EPOS_COMMAND_ROOT "$ENV{HOME}/opt/epos-command-library/EPOS_Linux_Library"
   CACHE PATH "Root directory of the extracted Maxon EPOS Linux Library")
@@ -93,7 +99,9 @@ add_executable(epos_driver_node
 target_compile_features(epos_driver_node PUBLIC cxx_std_17)
 target_include_directories(epos_driver_node PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
 ament_target_dependencies(epos_driver_node rclcpp std_msgs std_srvs)
+rosidl_get_typesupport_target(epos_typesupport ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(epos_driver_node
+  ${epos_typesupport}
   ${EPOS_COMMAND_LIBRARY}
   ${EPOS_FTDI_LIBRARY}
   ${EPOS_USB_LIBRARY}
@@ -121,4 +129,5 @@ if(BUILD_TESTING)
   set_tests_properties(epos_driver_integration PROPERTIES TIMEOUT 90)
 endif()
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()
