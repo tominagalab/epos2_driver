@@ -12,7 +12,7 @@ epos_driver_node:
     motors:
       node_4:
         node_id: 4
-        namespace: /epos2/node_4
+        namespace: /epos2/left_active_finger
         mode: velocity
         velocity:
           acceleration: 10000
@@ -25,7 +25,7 @@ epos_driver_node:
           max_velocity: 8000
       node_5:
         node_id: 5
-        namespace: /epos2/node_5
+        namespace: /epos2/right_active_finger
         mode: velocity
         velocity:
           acceleration: 10000

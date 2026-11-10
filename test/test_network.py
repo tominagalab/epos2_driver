@@ -102,15 +102,15 @@ class NetworkTest(unittest.TestCase):
 
     def test_isolated_failure_modes_profiles_and_limits(self):
         self.start(EPOS_TEST_FAIL_NODE='2')
-        failed = self.call('/epos2/node_2', True)
+        failed = self.call('/epos2/right_wheel', True)
         self.assertFalse(failed.success)
         self.assertIn('0x00001234', failed.message)
-        self.assertTrue(self.call('/epos2/node_1', True).success)
-        self.assertTrue(self.call('/epos2/node_4', True).success)
-        self.assertTrue(self.call('/epos2/node_5', True).success)
+        self.assertTrue(self.call('/epos2/left_wheel', True).success)
+        self.assertTrue(self.call('/epos2/left_active_finger', True).success)
+        self.assertTrue(self.call('/epos2/right_active_finger', True).success)
         self.assertTrue(self.call('/robot/arm', True).success)
-        self.publish('/epos2/node_1/cmd_vel_rpm', 8001)
-        self.publish('/epos2/node_1/cmd_vel_rpm', -8000)
+        self.publish('/epos2/left_wheel/cmd_vel_rpm', 8001)
+        self.publish('/epos2/left_wheel/cmd_vel_rpm', -8000)
         self.publish('/robot/arm/cmd_position_counts', 12345)
         self.wait_trace('move_velocity 1 -8000 0')
         self.wait_trace('move_position 3 12345 11')
@@ -125,23 +125,23 @@ class NetworkTest(unittest.TestCase):
 
     def test_baud_mismatch_does_not_block_usb_motor(self):
         self.start(EPOS_TEST_CAN_BAUD='500000')
-        failed = self.call('/epos2/node_1', True)
+        failed = self.call('/epos2/left_wheel', True)
         self.assertFalse(failed.success)
         self.assertIn('CAN baudrate mismatch', failed.message)
-        self.assertTrue(self.call('/epos2/node_4', True).success)
-        self.publish('/epos2/node_4/cmd_vel_rpm', 200)
+        self.assertTrue(self.call('/epos2/left_active_finger', True).success)
+        self.publish('/epos2/left_active_finger/cmd_vel_rpm', 200)
         self.wait_trace('move_velocity 4 200 0')
 
     def test_failed_enable_and_disable_blocks_further_commands(self):
         self.start(EPOS_TEST_FAIL_ENABLE_NODE='1', EPOS_TEST_FAIL_DISABLE_AFTER_ENABLE='1')
-        result = self.call('/epos2/node_1', True)
+        result = self.call('/epos2/left_wheel', True)
         self.assertFalse(result.success)
         self.assertIn('VCS_SetEnableState', result.message)
         self.assertIn('VCS_SetDisableState', result.message)
-        self.assertIn('uncertain', self.call('/epos2/node_1', True).message)
-        self.publish('/epos2/node_1/cmd_vel_rpm', 100)
+        self.assertIn('uncertain', self.call('/epos2/left_wheel', True).message)
+        self.publish('/epos2/left_wheel/cmd_vel_rpm', 100)
         self.assertNotIn('move_velocity 1 100', self.trace.read_text(encoding='utf-8'))
-        self.assertTrue(self.call('/epos2/node_4', True).success)
+        self.assertTrue(self.call('/epos2/left_active_finger', True).success)
 
     def test_invalid_position_profile_rejected_before_device_open(self):
         motors = self.config['epos_driver_node']['ros__parameters']['motors']
@@ -157,8 +157,8 @@ class NetworkTest(unittest.TestCase):
         params['gateway_node_id'] = 1
         params['motor_names'] = ['node_1']
         self.start(EPOS_TEST_GATEWAY_ID='1', EPOS_TEST_CAN_BAUD='500000')
-        self.assertTrue(self.call('/epos2/node_1', True).success)
-        self.publish('/epos2/node_1/cmd_vel_rpm', 100)
+        self.assertTrue(self.call('/epos2/left_wheel', True).success)
+        self.publish('/epos2/left_wheel/cmd_vel_rpm', 100)
         self.wait_trace('move_velocity 1 100 0')
         trace = self.trace.read_text(encoding='utf-8')
         self.assertNotIn('open_subdevice', trace)
@@ -169,9 +169,9 @@ class NetworkTest(unittest.TestCase):
         params = self.config['epos_driver_node']['ros__parameters']
         params['motor_names'] = ['node_2', 'node_3']
         self.start()
-        self.assertTrue(self.call('/epos2/node_2', True).success)
+        self.assertTrue(self.call('/epos2/right_wheel', True).success)
         self.assertTrue(self.call('/robot/arm', True).success)
-        self.publish('/epos2/node_2/cmd_vel_rpm', 100)
+        self.publish('/epos2/right_wheel/cmd_vel_rpm', 100)
         self.wait_trace('move_velocity 2 100 0')
         trace = self.trace.read_text(encoding='utf-8')
         self.assertIn('open_subdevice', trace)
@@ -184,6 +184,15 @@ class NetworkTest(unittest.TestCase):
             full = yaml.safe_load(config)['epos_driver_node']['ros__parameters']
         with open(TWO_MOTOR_CONFIG, encoding='utf-8') as config:
             two = yaml.safe_load(config)['epos_driver_node']['ros__parameters']
+        expected_namespaces = {
+            'node_1': '/epos2/left_wheel',
+            'node_2': '/epos2/right_wheel',
+            'node_3': '/epos2/rear_wheel',
+            'node_4': '/epos2/left_active_finger',
+            'node_5': '/epos2/right_active_finger',
+        }
+        for name, namespace in expected_namespaces.items():
+            self.assertEqual(full['motors'][name]['namespace'], namespace)
         self.assertEqual(two['motor_names'], ['node_4', 'node_5'])
         self.assertEqual(two['gateway_node_id'], 4)
         for name in two['motor_names']:
@@ -191,8 +200,9 @@ class NetworkTest(unittest.TestCase):
             self.assertEqual(two['motors'][name]['mode'], 'velocity')
 
         self.start(config_path=TWO_MOTOR_CONFIG)
-        for node_id in (4, 5):
-            namespace = f'/epos2/node_{node_id}'
+        for node_id, namespace in (
+            (4, '/epos2/left_active_finger'), (5, '/epos2/right_active_finger')
+        ):
             self.assertTrue(self.call(namespace, True).success)
             self.publish(namespace + '/cmd_vel_rpm', 100)
             self.wait_trace(f'move_velocity {node_id} 100 0')

@@ -25,7 +25,17 @@ MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速�
 
 1つのROSノードが共有USB接続とCANサブデバイスを管理し、各モータに個別の名前空間を設けます。
 設定例では全モータが `velocity` です。名前空間は設定ファイルの各 `namespace` を編集して
-変更できます。以下の `<ns>` は各モータの設定値（例：`/epos2/node_1`）です。
+変更できます。既定の名前空間と役割は次のとおりです。
+
+| EPOSノードID | 役割 | 名前空間 |
+|---|---|---|
+| 1 | 左車輪 | `/epos2/left_wheel` |
+| 2 | 右車輪 | `/epos2/right_wheel` |
+| 3 | 後方車輪 | `/epos2/rear_wheel` |
+| 4 | アクティブフィンガー左側 | `/epos2/left_active_finger` |
+| 5 | アクティブフィンガー右側 | `/epos2/right_active_finger` |
+
+以下の `<ns>` は各モータの名前空間です。
 
 | 種別 | 名前 | 型 | 用途 |
 |---|---|---|---|
@@ -226,8 +236,9 @@ DEFAULT_CONFIG_FILE = 'config.yaml'
 ros2 launch epos2_driver epos2_driver.launch.py config:=/absolute/path/to/config.yaml
 ```
 
-ノード4・5の構成では、それぞれ `/epos2/node_4`・`/epos2/node_5` の名前空間を使用します。
-以下の操作例はノード1の場合なので、使用するモータの名前空間に読み替えてください。
+以前の `/epos2/node_1` などの名前空間は使われなくなるため、上位システムの
+トピック・サービス名も変更してください。以下の速度制御の操作例は、既定で起動する
+ノード4（アクティブフィンガー左側）を対象にしています。
 
 ### 4.2 モータを有効にする
 
@@ -238,17 +249,17 @@ ros2 launch epos2_driver epos2_driver.launch.py config:=/absolute/path/to/config
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 
-ros2 service call /epos2/node_1/enable std_srvs/srv/SetBool "{data: true}"
+ros2 service call /epos2/left_active_finger/enable std_srvs/srv/SetBool "{data: true}"
 ```
 
 ### 4.3 速度を指令する
 
-例としてノード1の `/epos2/node_1/cmd_vel_rpm` に目標速度 [rpm] を送ります。
+例としてノード4の `/epos2/left_active_finger/cmd_vel_rpm` に目標速度 [rpm] を送ります。
 事前にサービス応答の `success: true` を確認してください。モータの安全な速度範囲を確認し、
 小さな値から試してください。
 
 ```bash
-ros2 topic pub --once /epos2/node_1/cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
+ros2 topic pub --once /epos2/left_active_finger/cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
 ```
 
 継続して指令する場合は、`--once` の代わりに `-r 10`（10 Hz）などを指定します。
@@ -257,18 +268,18 @@ ros2 topic pub --once /epos2/node_1/cmd_vel_rpm std_msgs/msg/Int32 "{data: 100}"
 ### 4.4 モータを停止・無効化する
 
 ```bash
-ros2 service call /epos2/node_1/enable std_srvs/srv/SetBool "{data: false}"
+ros2 service call /epos2/left_active_finger/enable std_srvs/srv/SetBool "{data: false}"
 ```
 
 ### 4.5 位置を指令する
 
-例えばノード3の `mode` を `position` に変更した場合は、同じサービスで有効化し、
+例えば5台用設定でノード3の `mode` を `position` に変更した場合は、同じサービスで有効化し、
 位置をエンコーダカウント単位で指定します。実際の可動範囲と基準を確認してから送信してください。
 
 ```bash
-ros2 service call /epos2/node_3/enable std_srvs/srv/SetBool "{data: true}"
-ros2 topic pub --once /epos2/node_3/cmd_position_counts std_msgs/msg/Int32 "{data: 100}"
-ros2 service call /epos2/node_3/enable std_srvs/srv/SetBool "{data: false}"
+ros2 service call /epos2/rear_wheel/enable std_srvs/srv/SetBool "{data: true}"
+ros2 topic pub --once /epos2/rear_wheel/cmd_position_counts std_msgs/msg/Int32 "{data: 100}"
+ros2 service call /epos2/rear_wheel/enable std_srvs/srv/SetBool "{data: false}"
 ```
 
 ## 5. トラブルシューティング
