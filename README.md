@@ -23,6 +23,16 @@ MaxonのEPOS Command Libraryを使い、モータの有効化・無効化と速�
 | 接続 | PC — USB — EPOS2ノード4 — CAN — ノード1、2、3、5 |
 | 制御モード | モータごとに `velocity` または `position` |
 
+実装は `src/` 内で次の責務に分けています。いずれも1つの実行ファイルにまとめられ、
+ROS 2ノードの数は増えません。
+
+| ファイル | 責務 |
+|---|---|
+| [`main.cpp`](./src/main.cpp) | ROS 2の初期化とノードの実行 |
+| [`epos_driver_node.cpp`](./src/epos_driver_node.cpp) | パラメータの検証とトピック・サービスの作成 |
+| [`epos_connection.cpp`](./src/epos_connection.cpp) | USB・CANゲートウェイ接続の管理 |
+| [`epos_motor.cpp`](./src/epos_motor.cpp) | モータごとの状態、有効化・停止と指令 |
+
 1つのROSノードが共有USB接続とCANサブデバイスを管理し、各モータに個別の名前空間を設けます。
 設定例では全モータが `velocity` です。名前空間は設定ファイルの各 `namespace` を編集して
 変更できます。既定の名前空間と役割は次のとおりです。

@@ -42,8 +42,8 @@ int VCS_GetGatewaySettings(void * handle, unsigned int * baud, unsigned int * er
   *baud = configured ? std::strtoul(configured, nullptr, 10) : 1000000;
   return 1;
 }
-int VCS_CloseSubDevice(void *, unsigned int *) {return 1;}
-int VCS_CloseDevice(void *, unsigned int *) {return 1;}
+int VCS_CloseSubDevice(void *, unsigned int *) {trace("close_subdevice", 0); return 1;}
+int VCS_CloseDevice(void *, unsigned int *) {trace("close_device", 0); return 1;}
 int VCS_SetDisableState(void * handle, unsigned short id, unsigned int * error)
 {
   trace("disable", id);

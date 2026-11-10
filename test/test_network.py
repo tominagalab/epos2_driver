@@ -152,6 +152,14 @@ class NetworkTest(unittest.TestCase):
         self.assertIn('profile_velocity exceeds max_velocity', self.process_output())
         self.assertFalse(self.trace.exists())
 
+    def test_invalid_namespace_rejected_before_device_open(self):
+        motors = self.config['epos_driver_node']['ros__parameters']['motors']
+        motors['node_4']['namespace'] = '/invalid-name'
+        self.start()
+        self.assertEqual(self.process.wait(timeout=15), 1)
+        self.assertIn('invalid', self.process_output().lower())
+        self.assertFalse(self.trace.exists())
+
     def test_single_usb_motor_without_can(self):
         params = self.config['epos_driver_node']['ros__parameters']
         params['gateway_node_id'] = 1
@@ -164,6 +172,19 @@ class NetworkTest(unittest.TestCase):
         self.assertNotIn('open_subdevice', trace)
         self.assertNotIn('disable 2', trace)
         self.assertNotIn('disable 4', trace)
+
+    def test_shutdown_disables_motors_before_closing_connection(self):
+        self.start()
+        self.assertTrue(self.call('/epos2/left_active_finger', True).success)
+        self.assertTrue(self.call('/epos2/right_active_finger', True).success)
+        self.process.send_signal(signal.SIGINT)
+        self.assertEqual(self.process.wait(timeout=10), 0, self.process_output())
+        trace = self.trace.read_text(encoding='utf-8')
+        for node_id in (4, 5):
+            self.assertLess(trace.index(f'halt_velocity {node_id} '), trace.index('close_subdevice'))
+            self.assertLess(trace.rindex(f'disable {node_id} '), trace.index('close_subdevice'))
+        self.assertLess(trace.index('close_subdevice'), trace.index('close_device'))
+        self.process = None
 
     def test_can_only_selection_keeps_usb_gateway_uncontrolled(self):
         params = self.config['epos_driver_node']['ros__parameters']

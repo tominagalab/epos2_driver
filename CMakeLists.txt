@@ -84,7 +84,12 @@ endfunction()
 create_epos_library_link(libEposCmd.so libEposCmd.so.6.8.1.0)
 create_epos_library_link(libftd2xx.so libftd2xx.so.1.4.8)
 
-add_executable(epos_driver_node src/epos_driver_node.cpp)
+add_executable(epos_driver_node
+  src/main.cpp
+  src/epos_driver_node.cpp
+  src/epos_connection.cpp
+  src/epos_motor.cpp
+)
 target_compile_features(epos_driver_node PUBLIC cxx_std_17)
 target_include_directories(epos_driver_node PRIVATE ${EPOS_COMMAND_INCLUDE_DIR})
 ament_target_dependencies(epos_driver_node rclcpp std_msgs std_srvs)

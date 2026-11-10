@@ -1,16 +1,44 @@
+# 5台すべてを制御する設定。# から行末までは説明であり、設定値には含まれません。
+# launch/epos2_driver.launch.py の DEFAULT_CONFIG_FILE で使用する設定を選びます。
+# YAMLのインデントにはスペースを使用し、タブは使わないでください。
+# 値を変更した場合は、このファイルを再読み込みできるようビルド・ノード再起動を行ってください。
+#
+# 注意: 以下の速度・加減速度は設定例です。機構、モータ、EPOS2の設定に
+# 合うことを確認し、安全な状態で低速から試してください。非常停止機能はありません。
+
+# パラメータの適用先となるROS 2ノード名。この名前は変更しないでください。
 epos_driver_node:
+  # ROS 2のパラメータファイルでは、各値をこのキーの下に記述します。
   ros__parameters:
+    # PCからノード4へ接続するためのEPOS Command Libraryの設定。
     device_name: EPOS2
     protocol_stack_name: MAXON SERIAL V2
     interface_name: USB
-    port_name: USB0
-    usb_baudrate: 1000000
-    timeout_ms: 500
-    can_baudrate: 1000000
-    gateway_node_id: 4
-    # Only motors listed here are controlled. gateway_node_id may be omitted.
+    port_name: USB0             # USBポート名。実際の接続先に合わせます。
+    usb_baudrate: 1000000       # USB通信の設定速度 [bit/s]
+    timeout_ms: 500             # 通信の待ち時間 [ms]
+    can_baudrate: 1000000       # ゲートウェイのCAN速度の期待値 [bit/s]
+    gateway_node_id: 4          # PCにUSB接続されたEPOS2のノードID
+    # CAN速度は読み取って照合するだけで、自動変更しません。実機側の設定を確認してください。
+
+    # 制御したいモータの設定名だけを列挙します。下の motors のキー名と一致させます。
+    # ここに書いた数が制御台数です。USB接続のモータを省略してCAN側だけの制御も可能です。
     motor_names: [node_1, node_2, node_3, node_4, node_5]
+
+    # 各モータは、node_id・namespace・modeと両モードのプロファイルを設定します。
+    # node_id: EPOS2に設定したID（1〜127）。重複不可。
+    # namespace: ROS 2のトピック・サービスの接頭辞。/で始め、重複させません。
+    # mode: velocity（速度制御）または position（位置制御）。起動時に読み込みます。
+    # velocity / position: 各モード用の値。選択しないモードの設定も必要です。
+    # acceleration / deceleration: 加速度・減速度。想定単位は rpm/s。
+    # max_velocity: 各モードの速度上限。想定単位は rpm。
+    # position.profile_velocity: 位置移動時の速度。position.max_velocity 以下にします。
+    # いずれも正の整数です。実際の単位はEPOS2の速度単位設定を確認してください。
+    # 速度指令は <namespace>/cmd_vel_rpm、位置指令は
+    # <namespace>/cmd_position_counts に送ります。モータの有効・無効は
+    # <namespace>/enable サービスで行います。
     motors:
+      # 左車輪（CAN接続）
       node_1:
         node_id: 1
         namespace: /epos2/left_wheel
@@ -24,6 +52,7 @@ epos_driver_node:
           deceleration: 10000
           profile_velocity: 6000
           max_velocity: 8000
+      # 右車輪（CAN接続）
       node_2:
         node_id: 2
         namespace: /epos2/right_wheel
@@ -37,6 +66,7 @@ epos_driver_node:
           deceleration: 10000
           profile_velocity: 6000
           max_velocity: 8000
+      # 後方車輪（CAN接続）
       node_3:
         node_id: 3
         namespace: /epos2/rear_wheel
@@ -50,6 +80,7 @@ epos_driver_node:
           deceleration: 10000
           profile_velocity: 6000
           max_velocity: 8000
+      # アクティブフィンガー左側（USB接続、CANゲートウェイ）
       node_4:
         node_id: 4
         namespace: /epos2/left_active_finger
@@ -63,6 +94,7 @@ epos_driver_node:
           deceleration: 10000
           profile_velocity: 6000
           max_velocity: 8000
+      # アクティブフィンガー右側（ノード4を経由したCAN接続）
       node_5:
         node_id: 5
         namespace: /epos2/right_active_finger
