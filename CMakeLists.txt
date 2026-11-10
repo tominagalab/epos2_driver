@@ -121,8 +121,19 @@ target_link_libraries(epos_driver_node
   ${EPOS_USB_LIBRARY}
 )
 
+# 2台のアクティブフィンガーへ速度指令を送るサンプルノードです。
+add_executable(active_finger_publisher src/active_finger_publisher.cpp)
+target_compile_features(active_finger_publisher PUBLIC cxx_std_17)
+ament_target_dependencies(active_finger_publisher rclcpp std_msgs)
+
+# 左右のアクティブフィンガーのフィードバックをコンソールに表示するサンプルノードです。
+add_executable(active_finger_subscriber src/active_finger_subscriber.cpp)
+target_compile_features(active_finger_subscriber PUBLIC cxx_std_17)
+ament_target_dependencies(active_finger_subscriber rclcpp)
+target_link_libraries(active_finger_subscriber ${epos_typesupport})
+
 # ros2 run / ros2 launch がパッケージ実行ファイルとして見つけられる場所に配置します。
-install(TARGETS epos_driver_node
+install(TARGETS epos_driver_node active_finger_publisher active_finger_subscriber
   DESTINATION lib/${PROJECT_NAME}
 )
 

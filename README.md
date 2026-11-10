@@ -361,6 +361,53 @@ ros2 interface show epos2_driver/msg/MotorFeedback
 ros2 topic hz /epos2/left_active_finger/feedback
 ```
 
+### 4.7 アクティブフィンガー2台のサンプル制御ノード
+
+[`src/active_finger_publisher.cpp`](./src/active_finger_publisher.cpp) は、左右のアクティブフィンガーに
+`50 rpm` を10 Hzで配信する最小構成のサンプルです。速度はソースコード内に固定しています。
+既定のノード4・5用設定のように、両モータが `velocity` モードで、名前空間が
+`/epos2/left_active_finger` と `/epos2/right_active_finger` の場合に使用できます。
+
+まず別端末でドライバを起動し、左右のモータを有効化します。
+
+```bash
+ros2 service call /epos2/left_active_finger/enable std_srvs/srv/SetBool "{data: true}"
+ros2 service call /epos2/right_active_finger/enable std_srvs/srv/SetBool "{data: true}"
+```
+
+続いて、サンプルノードを実行します。
+
+```bash
+ros2 run epos2_driver active_finger_publisher
+```
+
+速度を変更する場合は、ソース内の左右それぞれの `left_message.data` / `right_message.data` を編集し、
+パッケージを再ビルドしてください。`50` は例示値です。実機に合う速度・符号・許容範囲を確認し、
+低速から安全に試してください。
+
+停止する場合は、サンプルノードを終了してから左右のモータを無効化します。
+
+```bash
+# サンプルノードを実行している端末で Ctrl-C
+ros2 service call /epos2/left_active_finger/enable std_srvs/srv/SetBool "{data: false}"
+ros2 service call /epos2/right_active_finger/enable std_srvs/srv/SetBool "{data: false}"
+```
+
+このノードはモータを有効化せず、サンプルノードの終了や通信途絶による停止も保証しません。
+停止時は上記のとおりモータを無効化してください。非常停止装置や安全機能の代用にはなりません。
+
+### 4.8 アクティブフィンガー2台の状態表示サンプル
+
+[`src/active_finger_subscriber.cpp`](./src/active_finger_subscriber.cpp) は、左右のフィードバックを購読し、
+受信した時点で各モータの電流・速度・位置・出力軸速度・出力軸角度をコンソールに表示します。
+ドライバノードを起動した状態で、次のコマンドを実行してください。
+
+```bash
+ros2 run epos2_driver active_finger_subscriber
+```
+
+このノードはモータ指令を送らず、状態を表示するだけです。出力される速度の単位はEPOS2の設定に依存します。
+
 ## 5. トラブルシューティング
 
 - **`Maxon EPOS Command Library was not found`**  
